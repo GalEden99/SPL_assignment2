@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.lang.Math;
 
 /**
  * This class manages the dealer's threads and data
@@ -57,6 +58,10 @@ public class Dealer implements Runnable {
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " starting.");
         while (!shouldFinish()) {
             placeCardsOnTable();
+            
+            //updateing the reshuffle time before the timer loop
+            reshuffleTime = System.currentTimeMillis() + env.config.turnTimeoutMillis; 
+
             timerLoop();
             updateTimerDisplay(false);
             removeAllCardsFromTable();
@@ -69,10 +74,11 @@ public class Dealer implements Runnable {
      * The inner loop of the dealer thread that runs as long as the countdown did not time out.
      */
     private void timerLoop() {
+       
         while (!terminate && System.currentTimeMillis() < reshuffleTime) {
             sleepUntilWokenOrTimeout();
-            updateTimerDisplay(false);
-            removeCardsFromTable();
+            updateTimerDisplay(true);
+            //removeCardsFromTable();
             placeCardsOnTable();
         }
     }
@@ -82,6 +88,7 @@ public class Dealer implements Runnable {
      */
     public void terminate() {
         // TODO implement
+        terminate = true;
     }
 
     /**
@@ -96,9 +103,13 @@ public class Dealer implements Runnable {
     /**
      * Checks cards should be removed from the table and removes them.
      */
-    private void removeCardsFromTable() {
+    private void removeCardsFromTable(List<Integer> cards) { // we changed the method signature to get a list of cards to remove
         // TODO implement
-        
+        for (int i = 0; i < cards.size(); i++) {
+            int card = cards.get(i);
+            int slot = table.cardToSlot[card];
+            table.removeCard(slot);
+        }
     }
 
     /**
@@ -122,10 +133,7 @@ public class Dealer implements Runnable {
 
                 //removing the slot from the list of empty slots
                 emptySlots.remove(slotIndex);
-            }
-            
-
-           
+            }   
         }
     }
 
@@ -146,10 +154,7 @@ public class Dealer implements Runnable {
     private void updateTimerDisplay(boolean reset) {
         // TODO implement
         if (reset){
-            reshuffleTime = System.currentTimeMillis() + env.config.tableDelayMillis; // check if it is correct (tableDelayMillis)
-        }
-        else{
-            reshuffleTime = reshuffleTime + env.config.tableDelayMillis;
+            env.ui.setCountdown(Math.max(0, reshuffleTime-System.currentTimeMillis()), true);
         }
 
     }
@@ -159,6 +164,12 @@ public class Dealer implements Runnable {
      */
     private void removeAllCardsFromTable() {
         // TODO implement
+        for (int i=0; i<env.config.tableSize; i++){
+            if (table.slotToCard[i] != null){
+                table.removeCard(i);
+            }
+        }
+
     }
 
     /**
