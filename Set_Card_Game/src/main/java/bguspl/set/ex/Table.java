@@ -96,7 +96,6 @@ public class Table {
 
         // TODO implement
         env.ui.placeCard(card, slot);
-
     }
 
     /**

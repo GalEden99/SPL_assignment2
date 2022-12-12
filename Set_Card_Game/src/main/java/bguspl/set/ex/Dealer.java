@@ -1,7 +1,11 @@
 package bguspl.set.ex;
 
+import bguspl.set.Config;
 import bguspl.set.Env;
 
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
@@ -94,6 +98,7 @@ public class Dealer implements Runnable {
      */
     private void removeCardsFromTable() {
         // TODO implement
+        
     }
 
     /**
@@ -101,6 +106,27 @@ public class Dealer implements Runnable {
      */
     private void placeCardsOnTable() {
         // TODO implement
+        if (deck.size() != 0){
+            //finding an empty random slot
+            List<Integer> emptySlots = findEmptySlot();
+
+            for (int i = 0; i < emptySlots.size(); i++) {
+
+                int slot = emptySlots.get((int) (Math.random() * emptySlots.size()));
+                int slotIndex = emptySlots.indexOf(slot);
+                
+                Collections.shuffle(deck);
+                int card = deck.get(0);
+                table.placeCard(card,slot);
+                deck.remove(0);
+
+                //removing the slot from the list of empty slots
+                emptySlots.remove(slotIndex);
+            }
+            
+
+           
+        }
     }
 
     /**
@@ -108,6 +134,10 @@ public class Dealer implements Runnable {
      */
     private void sleepUntilWokenOrTimeout() {
         // TODO implement
+        try {
+            Thread.sleep(env.config.tableDelayMillis);
+                } catch (InterruptedException exception) {
+        }
     }
 
     /**
@@ -115,6 +145,13 @@ public class Dealer implements Runnable {
      */
     private void updateTimerDisplay(boolean reset) {
         // TODO implement
+        if (reset){
+            reshuffleTime = System.currentTimeMillis() + env.config.tableDelayMillis; // check if it is correct (tableDelayMillis)
+        }
+        else{
+            reshuffleTime = reshuffleTime + env.config.tableDelayMillis;
+        }
+
     }
 
     /**
@@ -129,5 +166,18 @@ public class Dealer implements Runnable {
      */
     private void announceWinners() {
         // TODO implement
+    }
+
+    ///////////////////////////////// new methodes /////////////////////////////////
+
+    //finds an empty slot on the table
+    private List<Integer> findEmptySlot(){
+        List<Integer> emptySlots = new ArrayList<Integer>();
+        for (int i = 0; i < env.config.tableSize; i++) {
+            if (table.slotToCard[i] == null){
+                emptySlots.add(i);
+            }
+        }
+        return emptySlots;
     }
 }
