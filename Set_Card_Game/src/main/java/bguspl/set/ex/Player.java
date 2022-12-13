@@ -1,5 +1,8 @@
 package bguspl.set.ex;
 
+import java.util.ArrayDeque;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.logging.Level;
 
 import bguspl.set.Env;
@@ -117,6 +120,17 @@ public class Player implements Runnable {
      */
     public void keyPressed(int slot) {
         // TODO implement
+        Object lockCardsAndTokens = Dealer.getLockCardsAndTokens(); //will be fixed
+        synchronized(lockCardsAndTokens) {
+        }
+
+        Queue<Integer> queueOfKey = new LinkedList<Integer>();
+        queueOfKey.add(slot);
+
+        if (queueOfKey.size() == 3) {
+            synchronized (this) { notify(); } // wake up the Dealer thread
+            
+        }
     }
 
     /**

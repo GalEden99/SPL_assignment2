@@ -43,6 +43,10 @@ public class Dealer implements Runnable {
      */
     private long reshuffleTime = Long.MAX_VALUE;
 
+    //////////////////////// FIELDS ADDED ////////////////////////
+
+    private Object lockCardsAndTokens = new Object(); //lock object for the dealer and players threads
+
     public Dealer(Env env, Table table, Player[] players) {
         this.env = env;
         this.table = table;
@@ -105,10 +109,13 @@ public class Dealer implements Runnable {
      */
     private void removeCardsFromTable(List<Integer> cards) { // we changed the method signature to get a list of cards to remove
         // TODO implement
-        for (int i = 0; i < cards.size(); i++) {
-            int card = cards.get(i);
-            int slot = table.cardToSlot[card];
-            table.removeCard(slot);
+        synchronized(lockCardsAndTokens){
+            for (int i = 0; i < cards.size(); i++) {
+                int card = cards.get(i);
+                int slot = table.cardToSlot[card];
+                env.ui.removeTokens(slot);
+                table.removeCard(slot);
+            }
         }
     }
 
@@ -117,23 +124,25 @@ public class Dealer implements Runnable {
      */
     private void placeCardsOnTable() {
         // TODO implement
-        if (deck.size() != 0){
-            //finding an empty random slot
-            List<Integer> emptySlots = findEmptySlot();
+        synchronized(lockCardsAndTokens){
+            if (deck.size() != 0){
+                //finding an empty random slot
+                List<Integer> emptySlots = findEmptySlot();
 
-            for (int i = 0; i < emptySlots.size(); i++) {
+                for (int i = 0; i < emptySlots.size(); i++) {
 
-                int slot = emptySlots.get((int) (Math.random() * emptySlots.size()));
-                int slotIndex = emptySlots.indexOf(slot);
-                
-                Collections.shuffle(deck);
-                int card = deck.get(0);
-                table.placeCard(card,slot);
-                deck.remove(0);
+                    int slot = emptySlots.get((int) (Math.random() * emptySlots.size()));
+                    int slotIndex = emptySlots.indexOf(slot);
+                    
+                    Collections.shuffle(deck);
+                    int card = deck.get(0);
+                    table.placeCard(card,slot);
+                    deck.remove(0);
 
-                //removing the slot from the list of empty slots
-                emptySlots.remove(slotIndex);
-            }   
+                    //removing the slot from the list of empty slots
+                    emptySlots.remove(slotIndex);
+                }   
+            }
         }
     }
 
@@ -154,7 +163,8 @@ public class Dealer implements Runnable {
     private void updateTimerDisplay(boolean reset) {
         // TODO implement
         if (reset){
-            env.ui.setCountdown(Math.max(0, reshuffleTime-System.currentTimeMillis()), true);
+            Boolean warning = env.config.turnTimeoutWarningMillis >= reshuffleTime-System.currentTimeMillis();
+            env.ui.setCountdown(Math.max(0, reshuffleTime-System.currentTimeMillis()), warning);
         }
 
     }
@@ -164,9 +174,16 @@ public class Dealer implements Runnable {
      */
     private void removeAllCardsFromTable() {
         // TODO implement
-        for (int i=0; i<env.config.tableSize; i++){
-            if (table.slotToCard[i] != null){
-                table.removeCard(i);
+        synchronized(lockCardsAndTokens){
+            env.ui.removeTokens();
+            for (int i=0; i<env.config.tableSize; i++){
+                if (table.slotToCard[i] != null){
+                    int card = table.slotToCard[i];
+                    table.slotToCard[i] = null;
+                    table.cardToSlot[i] = null;
+                    deck.add(card);
+
+                }
             }
         }
 
@@ -190,5 +207,10 @@ public class Dealer implements Runnable {
             }
         }
         return emptySlots;
+    }
+
+    //geter for the lockCardsAndTokens object
+    public Object getLockCardsAndTokens(){
+        return lockCardsAndTokens;
     }
 }
