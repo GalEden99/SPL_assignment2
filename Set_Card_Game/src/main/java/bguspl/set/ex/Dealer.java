@@ -1,11 +1,17 @@
 package bguspl.set.ex;
 
+import bguspl.set.Config;
 import bguspl.set.Env;
 
+import java.lang.reflect.Array;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.lang.Math;
 
 /**
  * This class manages the dealer's threads and data
@@ -38,10 +44,20 @@ public class Dealer implements Runnable {
      */
     private long reshuffleTime = Long.MAX_VALUE;
 
+    //////////////////////// FIELDS ADDED ////////////////////////
+
+    private Object lockCards = new Object(); //lock object for the dealer threads
+
     public Dealer(Env env, Table table, Player[] players) {
         this.env = env;
         this.table = table;
         this.players = players;
+
+        // Set the dealer for each player
+        for (int i = 0; i < players.length; i++) {
+            players[i].setDealer(this);
+        }
+
         deck = IntStream.range(0, env.config.deckSize).boxed().collect(Collectors.toList());
     }
 
@@ -53,6 +69,10 @@ public class Dealer implements Runnable {
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " starting.");
         while (!shouldFinish()) {
             placeCardsOnTable();
+            
+            //updateing the reshuffle time before the timer loop
+            reshuffleTime = System.currentTimeMillis() + env.config.turnTimeoutMillis; 
+
             timerLoop();
             updateTimerDisplay(false);
             removeAllCardsFromTable();
@@ -65,10 +85,11 @@ public class Dealer implements Runnable {
      * The inner loop of the dealer thread that runs as long as the countdown did not time out.
      */
     private void timerLoop() {
+       
         while (!terminate && System.currentTimeMillis() < reshuffleTime) {
             sleepUntilWokenOrTimeout();
-            updateTimerDisplay(false);
-            removeCardsFromTable();
+            updateTimerDisplay(true);
+            //removeCardsFromTable();
             placeCardsOnTable();
         }
     }
@@ -78,7 +99,7 @@ public class Dealer implements Runnable {
      */
     public void terminate() {
         // TODO implement
-        
+        terminate = true;
     }
 
     /**
@@ -93,8 +114,16 @@ public class Dealer implements Runnable {
     /**
      * Checks cards should be removed from the table and removes them.
      */
-    private void removeCardsFromTable() {
+    private void removeCardsFromTable(List<Integer> cards) { // we changed the method signature to get a list of cards to remove
         // TODO implement
+        synchronized(lockCards){
+            for (int i = 0; i < cards.size(); i++) {
+                int card = cards.get(i);
+                int slot = table.cardToSlot[card];
+                env.ui.removeTokens(slot);
+                table.removeCard(slot);
+            }
+        }
     }
 
     /**
@@ -102,6 +131,26 @@ public class Dealer implements Runnable {
      */
     private void placeCardsOnTable() {
         // TODO implement
+        synchronized(lockCards){
+            if (deck.size() != 0){
+                //finding an empty random slot
+                List<Integer> emptySlots = findEmptySlot();
+
+                for (int i = 0; i < emptySlots.size(); i++) {
+
+                    int slot = emptySlots.get((int) (Math.random() * emptySlots.size()));
+                    int slotIndex = emptySlots.indexOf(slot);
+                    
+                    Collections.shuffle(deck);
+                    int card = deck.get(0);
+                    table.placeCard(card,slot);
+                    deck.remove(0);
+
+                    //removing the slot from the list of empty slots
+                    emptySlots.remove(slotIndex);
+                }   
+            }
+        }
     }
 
     /**
@@ -109,6 +158,10 @@ public class Dealer implements Runnable {
      */
     private void sleepUntilWokenOrTimeout() {
         // TODO implement
+        try {
+            Thread.sleep(env.config.tableDelayMillis);
+                } catch (InterruptedException exception) {
+        }
     }
 
     /**
@@ -116,6 +169,11 @@ public class Dealer implements Runnable {
      */
     private void updateTimerDisplay(boolean reset) {
         // TODO implement
+        if (reset){
+            Boolean warning = env.config.turnTimeoutWarningMillis >= reshuffleTime-System.currentTimeMillis();
+            env.ui.setCountdown(Math.max(0, reshuffleTime-System.currentTimeMillis()), warning);
+        }
+
     }
 
     /**
@@ -123,6 +181,19 @@ public class Dealer implements Runnable {
      */
     private void removeAllCardsFromTable() {
         // TODO implement
+        synchronized(lockCards){
+            env.ui.removeTokens();
+            for (int i=0; i<env.config.tableSize; i++){
+                if (table.slotToCard[i] != null){
+                    int card = table.slotToCard[i];
+                    table.slotToCard[i] = null;
+                    table.cardToSlot[i] = null;
+                    deck.add(card);
+
+                }
+            }
+        }
+
     }
 
     /**
@@ -131,4 +202,33 @@ public class Dealer implements Runnable {
     private void announceWinners() {
         // TODO implement
     }
+
+    ///////////////////////////////// new methodes /////////////////////////////////
+
+    //finds an empty slot on the table
+    private List<Integer> findEmptySlot(){
+        List<Integer> emptySlots = new ArrayList<Integer>();
+        for (int i = 0; i < env.config.tableSize; i++) {
+            if (table.slotToCard[i] == null){
+                emptySlots.add(i);
+            }
+        }
+        return emptySlots;
+    }
+
+    //checks if the cards are a set
+    public boolean checkSet(int playerId, int[] cards){
+        boolean isSet = env.util.testSet(cards);
+
+        if (isSet){
+            removeCardsFromTable(Arrays.stream(cards).boxed().collect(Collectors.toList()));
+            players[playerId].point();
+            env.ui.setFreeze(playerId, env.config.pointFreezeMillis); // add block to the player in keyPress
+        } else {
+            players[playerId].penalty();
+            env.ui.setFreeze(playerId, env.config.penaltyFreezeMillis); // add block to the player in keyPress
+        }
+        return isSet;
+    }
+
 }

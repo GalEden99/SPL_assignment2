@@ -1,5 +1,8 @@
 package bguspl.set.ex;
 
+import java.util.ArrayDeque;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.logging.Level;
 
 import bguspl.set.Env;
@@ -51,6 +54,14 @@ public class Player implements Runnable {
      * The current score of the player.
      */
     private int score;
+
+    //////////////////////// FIELDS ADDED ////////////////////////
+
+    private Object lockTokens = new Object(); //lock object for the players threads
+
+    private Dealer dealer; //the dealer object
+
+    private boolean isLegal = true; //false if the player has made an illegal move (i.e. the player has pressed a key that is not allowed)
 
     /**
      * The class constructor.
@@ -108,6 +119,7 @@ public class Player implements Runnable {
      */
     public void terminate() {
         // TODO implement
+        terminate = true;
     }
 
     /**
@@ -117,6 +129,30 @@ public class Player implements Runnable {
      */
     public void keyPressed(int slot) {
         // TODO implement
+        synchronized(lockTokens) {
+            Queue<Integer> queueOfKeyPressed = new LinkedList<Integer>();
+
+            if (queueOfKeyPressed.contains(slot)) {
+                table.removeToken(this.id, slot);
+                isLegal = true;
+            } else {
+                if (queueOfKeyPressed.size() < 3)
+                    queueOfKeyPressed.add(slot);
+            }
+            
+            // if the queue is full, check if the cards are a set
+            if (queueOfKeyPressed.size() == 3 && isLegal) {
+                int[] cards = new int[3];
+                for (int i = 0; i < 3; i++) {
+                    cards[i] = queueOfKeyPressed.remove();
+                }
+
+                // the dealer checks if the cards are a set
+                if (!dealer.checkSet(id, cards)){
+                    isLegal = false;
+                }
+            }
+        }
     }
 
     /**
@@ -127,6 +163,8 @@ public class Player implements Runnable {
      */
     public void point() {
         // TODO implement
+        score++;
+
 
         int ignored = table.countCards(); // this part is just for demonstration in the unit tests
         env.ui.setScore(id, ++score);
@@ -137,9 +175,19 @@ public class Player implements Runnable {
      */
     public void penalty() {
         // TODO implement
+        //try(playerThread.sleep(env.config.penaltyFreezeMillis)) {
+        //} catch (InterruptedException e) {
+        //}
     }
 
     public int getScore() {
         return score;
+    }
+
+
+    //////////////////////// METHODS ADDED ////////////////////////
+
+    public void setDealer(Dealer dealer) {
+        this.dealer = dealer;
     }
 }
