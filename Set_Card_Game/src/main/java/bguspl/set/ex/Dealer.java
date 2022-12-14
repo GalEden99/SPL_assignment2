@@ -5,6 +5,7 @@ import bguspl.set.Env;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
@@ -45,12 +46,18 @@ public class Dealer implements Runnable {
 
     //////////////////////// FIELDS ADDED ////////////////////////
 
-    private Object lockCardsAndTokens = new Object(); //lock object for the dealer and players threads
+    private Object lockCards = new Object(); //lock object for the dealer threads
 
     public Dealer(Env env, Table table, Player[] players) {
         this.env = env;
         this.table = table;
         this.players = players;
+
+        // Set the dealer for each player
+        for (int i = 0; i < players.length; i++) {
+            players[i].setDealer(this);
+        }
+
         deck = IntStream.range(0, env.config.deckSize).boxed().collect(Collectors.toList());
     }
 
@@ -109,7 +116,7 @@ public class Dealer implements Runnable {
      */
     private void removeCardsFromTable(List<Integer> cards) { // we changed the method signature to get a list of cards to remove
         // TODO implement
-        synchronized(lockCardsAndTokens){
+        synchronized(lockCards){
             for (int i = 0; i < cards.size(); i++) {
                 int card = cards.get(i);
                 int slot = table.cardToSlot[card];
@@ -124,7 +131,7 @@ public class Dealer implements Runnable {
      */
     private void placeCardsOnTable() {
         // TODO implement
-        synchronized(lockCardsAndTokens){
+        synchronized(lockCards){
             if (deck.size() != 0){
                 //finding an empty random slot
                 List<Integer> emptySlots = findEmptySlot();
@@ -174,7 +181,7 @@ public class Dealer implements Runnable {
      */
     private void removeAllCardsFromTable() {
         // TODO implement
-        synchronized(lockCardsAndTokens){
+        synchronized(lockCards){
             env.ui.removeTokens();
             for (int i=0; i<env.config.tableSize; i++){
                 if (table.slotToCard[i] != null){
@@ -209,8 +216,19 @@ public class Dealer implements Runnable {
         return emptySlots;
     }
 
-    //geter for the lockCardsAndTokens object
-    public Object getLockCardsAndTokens(){
-        return lockCardsAndTokens;
+    //checks if the cards are a set
+    public boolean checkSet(int playerId, int[] cards){
+        boolean isSet = env.util.testSet(cards);
+
+        if (isSet){
+            removeCardsFromTable(Arrays.stream(cards).boxed().collect(Collectors.toList()));
+            players[playerId].point();
+            env.ui.setFreeze(playerId, env.config.pointFreezeMillis); // add block to the player in keyPress
+        } else {
+            players[playerId].penalty();
+            env.ui.setFreeze(playerId, env.config.penaltyFreezeMillis); // add block to the player in keyPress
+        }
+        return isSet;
     }
+
 }
