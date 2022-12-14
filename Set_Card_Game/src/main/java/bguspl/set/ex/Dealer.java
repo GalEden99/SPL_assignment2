@@ -5,6 +5,7 @@ import bguspl.set.Env;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
@@ -45,7 +46,7 @@ public class Dealer implements Runnable {
 
     //////////////////////// FIELDS ADDED ////////////////////////
 
-    private Object lockCardsAndTokens = new Object(); //lock object for the dealer and players threads
+    private Object cardsLock = new Object(); //lock object for the dealer thread
 
     public Dealer(Env env, Table table, Player[] players) {
         this.env = env;
@@ -60,6 +61,12 @@ public class Dealer implements Runnable {
     @Override
     public void run() {
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " starting.");
+
+        //set the dealer for each player
+        for (int i = 0; i < players.length; i++) {
+            players[i].setDealer(this);
+        }
+
         while (!shouldFinish()) {
             placeCardsOnTable();
             
@@ -67,7 +74,7 @@ public class Dealer implements Runnable {
             reshuffleTime = System.currentTimeMillis() + env.config.turnTimeoutMillis; 
 
             timerLoop();
-            updateTimerDisplay(false);
+            //updateTimerDisplay(false);
             removeAllCardsFromTable();
         }
         announceWinners();
@@ -81,6 +88,7 @@ public class Dealer implements Runnable {
        
         while (!terminate && System.currentTimeMillis() < reshuffleTime) {
             sleepUntilWokenOrTimeout();
+            //checkSet();
             updateTimerDisplay(true);
             //removeCardsFromTable();
             placeCardsOnTable();
@@ -109,7 +117,7 @@ public class Dealer implements Runnable {
      */
     private void removeCardsFromTable(List<Integer> cards) { // we changed the method signature to get a list of cards to remove
         // TODO implement
-        synchronized(lockCardsAndTokens){
+        synchronized(cardsLock){
             for (int i = 0; i < cards.size(); i++) {
                 int card = cards.get(i);
                 int slot = table.cardToSlot[card];
@@ -124,7 +132,7 @@ public class Dealer implements Runnable {
      */
     private void placeCardsOnTable() {
         // TODO implement
-        synchronized(lockCardsAndTokens){
+        synchronized(cardsLock){
             if (deck.size() != 0){
                 //finding an empty random slot
                 List<Integer> emptySlots = findEmptySlot();
@@ -174,7 +182,7 @@ public class Dealer implements Runnable {
      */
     private void removeAllCardsFromTable() {
         // TODO implement
-        synchronized(lockCardsAndTokens){
+        synchronized(cardsLock){
             env.ui.removeTokens();
             for (int i=0; i<env.config.tableSize; i++){
                 if (table.slotToCard[i] != null){
@@ -209,8 +217,23 @@ public class Dealer implements Runnable {
         return emptySlots;
     }
 
-    //geter for the lockCardsAndTokens object
-    public Object getLockCardsAndTokens(){
-        return lockCardsAndTokens;
+    //check if the cards are a set
+    public boolean checkSet(int playerId, int[] cards) {
+        boolean isSet = env.util.testSet(cards);
+        if (isSet){
+            removeCardsFromTable(Arrays.asList(cards[0], cards[1], cards[2]));
+            players[playerId].point();
+            env.ui.setFreeze(playerId, env.config.pointFreezeMillis);
+            //when a set is found, the reshuffle time is updated
+            reshuffleTime = System.currentTimeMillis() + env.config.turnTimeoutMillis;
+            updateTimerDisplay(true);
+        }
+        else {
+            players[playerId].penalty();
+            env.ui.setFreeze(playerId, env.config.penaltyFreezeMillis);
+        }
+        return isSet;
     }
+    
+
 }

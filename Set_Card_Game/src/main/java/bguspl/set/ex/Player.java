@@ -55,6 +55,16 @@ public class Player implements Runnable {
      */
     private int score;
 
+    //////////////////////// FIELDS ADDED ////////////////////////
+
+    private Dealer dealer; //the dealer object
+
+    private Queue <Integer> queueOfKeyPresses = new LinkedList<>(); //the queue of key presses
+
+    private Queue <Integer> queueOfTokens = new LinkedList<>();  // the tokens the player has on the table
+    
+
+
     /**
      * The class constructor.
      *
@@ -82,7 +92,31 @@ public class Player implements Runnable {
 
         while (!terminate) {
             // TODO implement main player loop
+            while (!queueOfKeyPresses.isEmpty()) {
+                int currSlot = queueOfKeyPresses.remove();
+                if (queueOfTokens.contains(currSlot)) {
+                    table.removeToken(this.id, currSlot);
+                    queueOfTokens.remove(currSlot);
+                }
+                else {
+                    if (queueOfTokens.size()<3) {
+                        table.placeToken(this.id, currSlot);
+                        queueOfTokens.add(currSlot);
+                    }
+                    //check if the player has found a set
+                    if (queueOfTokens.size() ==3) {
+                        dealer.notify(); //notify the dealer that the player has placed 3 tokens
+                    }
+                    //try {
+                    // playerThread.wait(); //wait for the dealer to check if the set is valid
+                        
+                // } catch (InterruptedException e) {}
+                    
+                }
+
+            }
         }
+
         if (!human) try { aiThread.join(); } catch (InterruptedException ignored) {}
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " terminated.");
     }
@@ -111,6 +145,7 @@ public class Player implements Runnable {
      */
     public void terminate() {
         // TODO implement
+        terminate = true;
     }
 
     /**
@@ -120,17 +155,18 @@ public class Player implements Runnable {
      */
     public void keyPressed(int slot) {
         // TODO implement
-        Object lockCardsAndTokens = Dealer.getLockCardsAndTokens(); //will be fixed
-        synchronized(lockCardsAndTokens) {
+
+        while(queueOfKeyPresses.size() >= 3) {
+            try {
+                Thread.currentThread().wait();
+            }
+            catch (InterruptedException e) {}
         }
 
-        Queue<Integer> queueOfKey = new LinkedList<Integer>();
-        queueOfKey.add(slot);
-
-        if (queueOfKey.size() == 3) {
-            synchronized (this) { notify(); } // wake up the Dealer thread
-            
+        if (queueOfKeyPresses.size() < 3) {
+            queueOfKeyPresses.add(slot);
         }
+         
     }
 
     /**
@@ -141,6 +177,12 @@ public class Player implements Runnable {
      */
     public void point() {
         // TODO implement
+        score++;
+        //freeze the player's thread after he has found a set
+            try {
+                Thread.sleep(env.config.pointFreezeMillis);
+            }
+            catch (InterruptedException e) {}
 
         int ignored = table.countCards(); // this part is just for demonstration in the unit tests
         env.ui.setScore(id, ++score);
@@ -151,9 +193,21 @@ public class Player implements Runnable {
      */
     public void penalty() {
         // TODO implement
+        //freeze the player's thread after he has't found a set
+        try {
+            Thread.sleep(env.config.penaltyFreezeMillis);
+        }
+        catch (InterruptedException e) {}
+
     }
 
     public int getScore() {
         return score;
+    }
+    
+    //////////////////////// METHODS ADDED ////////////////////////
+
+    public void setDealer(Dealer dealer) {
+        this.dealer = dealer;
     }
 }
