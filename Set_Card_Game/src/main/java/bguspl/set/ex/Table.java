@@ -3,8 +3,12 @@ package bguspl.set.ex;
 import bguspl.set.Env;
 
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 
 /**
@@ -22,12 +26,19 @@ public class Table {
     /**
      * Mapping between a slot and the card placed in it (null if none).
      */
-    protected final Integer[] slotToCard; // card per slot (if any)
+    protected volatile Integer[] slotToCard; // card per slot (if any)
 
     /**
      * Mapping between a card and the slot it is in (null if none).
      */
-    protected final Integer[] cardToSlot; // slot per card (if any)
+    protected volatile Integer[] cardToSlot; // slot per card (if any)
+
+
+    //////////////////////// FIELDS ADDED ////////////////////////
+
+    //the tokens that the player has on the table (queueOfTokens[player][slot])
+    protected volatile boolean[][] playerTokens; // tokens per player per slot (if any)
+
 
     /**
      * Constructor for testing.
@@ -41,6 +52,7 @@ public class Table {
         this.env = env;
         this.slotToCard = slotToCard;
         this.cardToSlot = cardToSlot;
+        playerTokens = new boolean[env.config.players][env.config.tableSize];
     }
 
     /**
@@ -51,6 +63,7 @@ public class Table {
     public Table(Env env) {
 
         this(env, new Integer[env.config.tableSize], new Integer[env.config.deckSize]);
+        playerTokens = new boolean[env.config.players][env.config.tableSize];
     }
 
     /**
@@ -109,8 +122,11 @@ public class Table {
 
         // TODO implement
         int card = slotToCard[slot];
-        cardToSlot[card] = null; // ???
-        slotToCard[slot] = null; // ???
+        cardToSlot[card] = null; 
+        slotToCard[slot] = null; 
+        for (int i = 0; i< env.config.players; i++){
+            removeToken(i, slot);
+        }
         env.ui.removeCard(slot);
     }
 
@@ -121,7 +137,12 @@ public class Table {
      */
     public void placeToken(int player, int slot) {
         // TODO implement
+        
         if (slotToCard[slot] != null){
+
+            ////////////////////// for testing ///////////////////////
+            System.out.println("table.placeToken: " + player + ": " + slot);
+            playerTokens[player][slot] = true;
             env.ui.placeToken(player, slot);
         }
     }
@@ -136,9 +157,45 @@ public class Table {
         // TODO implement 
         // implement try and catch 
         if (slotToCard[slot] != null){
+            
+            ////////////////////// for testing ///////////////////////
+            System.out.println("            table.removeToken: " + player + ": " + slot);
+            playerTokens[player][slot] = false;
             env.ui.removeToken(player, slot);
             return true;
         }
         return false;
+    }
+
+
+    //////////////////////// METHODS ADDED ////////////////////////
+
+    // contains method for the queue of tokens
+    public boolean containsToken(int player, int slot){
+        return playerTokens[player][slot];
+    }
+
+    // returns the number of tokens on the table for a player
+    public int countTokens(int player){
+        int tokens = 0;
+        for (int i = 0; i < env.config.tableSize; i++){
+            if (playerTokens[player][i]){
+                tokens++;
+            }
+        }
+        return tokens;
+    }
+    
+    // returns the slots that the player has tokens on
+    public int[] getTokensSlots(int player){
+        int[] slots = new int[3];
+        int index = 0;
+        for (int i = 0; i < env.config.tableSize; i++){
+            if (playerTokens[player][i]){
+                slots[index] = i;
+                index++;
+            }
+        }
+        return slots;
     }
 }
