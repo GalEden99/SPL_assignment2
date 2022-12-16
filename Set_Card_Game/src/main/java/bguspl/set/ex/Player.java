@@ -1,5 +1,6 @@
 package bguspl.set.ex;
 
+import java.security.spec.EncodedKeySpec;
 import java.util.ArrayDeque;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -57,11 +58,15 @@ public class Player implements Runnable {
 
     //////////////////////// FIELDS ADDED ////////////////////////
 
-    private Object lockTokens = new Object(); //lock object for the players threads
-
     private Dealer dealer; //the dealer object
 
-    private boolean isLegal = true; //false if the player has made an illegal move (i.e. the player has pressed a key that is not allowed)
+    //private boolean isLegal = true; //false if the player has made an illegal move (i.e. the player has pressed a key that is not allowed)
+
+    private Queue<Integer> queueOfKeyPresses = new LinkedList<>(); //the queue of key presses
+
+    private int ansFromCheckSet = 0; //-1 if the set is not legal, 0 if there is no set to check, 1 if the set is legal
+
+    private boolean keyPressedOpen = true; //true if the player can press on a key, false if the player cannot press on a key
 
     /**
      * The class constructor.
@@ -88,12 +93,72 @@ public class Player implements Runnable {
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + "starting.");
         if (!human) createArtificialIntelligence();
 
+        ////////////////////// for testing ///////////////////////
+        System.out.println("Enter the main loop (run()) of " + Thread.currentThread().getName());
+
         while (!terminate) {
             // TODO implement main player loop
+            while (!queueOfKeyPresses.isEmpty()){
+
+                int currSlot = queueOfKeyPresses.remove();
+                
+                System.out.println("Player.run(): is the queue of tokens contain " + currSlot + "? " + table.containsToken(id, currSlot));
+
+                if (table.containsToken(id, currSlot)){ //fix bug
+                    table.removeToken(id, currSlot);
+                    
+                } else {
+
+                    int amountOfTokens = table.countTokens(id);
+
+                    if (amountOfTokens<3){
+                        table.placeToken(id, currSlot);
+                    }
+                    
+                    if (amountOfTokens==3){
+
+                        // block the player from pressing on a key
+                        keyPressedOpen = false;
+
+                        //send the set to the dealer for checking
+                        int[] currSetOfCards = convertToSetOfCard(id); //HEREEEEEEE
+
+                        dealer.queueOfPlayersId.add(id);
+                        dealer.queueOfSets.add(currSetOfCards);
+                        
+                        dealer.getThread().interrupt(); //notify the dealer that the player has placed 3 tokens
+
+                        synchronized(this){
+                            try{
+                                wait(); //wait for the dealer to check if the set is legal (blocking the player thread from another key press)
+                            } catch (InterruptedException e) {
+                            }
+                        }
+
+                        System.out.println("player " + id + ": I AM AWAKE");
+
+                        if (ansFromCheckSet == -1){
+                            //the set is not legal
+                            penalty();
+                            ansFromCheckSet = 0;
+                        } else if (ansFromCheckSet == 1){
+                            //the set is legal
+                            point();
+                            ansFromCheckSet = 0;
+                        } 
+
+                        
+
+                    }
+
+                }
+            } 
         }
+
         if (!human) try { aiThread.join(); } catch (InterruptedException ignored) {}
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " terminated.");
     }
+
 
     /**
      * Creates an additional thread for an AI (computer) player. The main loop of this thread repeatedly generates
@@ -106,7 +171,7 @@ public class Player implements Runnable {
             while (!terminate) {
                 // TODO implement player key press simulator
                 try {
-                    synchronized (this) { wait(); }
+                    wait();
                 } catch (InterruptedException ignored) {}
             }
             env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " terminated.");
@@ -129,30 +194,25 @@ public class Player implements Runnable {
      */
     public void keyPressed(int slot) {
         // TODO implement
-        synchronized(lockTokens) {
-            Queue<Integer> queueOfKeyPressed = new LinkedList<Integer>();
 
-            if (queueOfKeyPressed.contains(slot)) {
-                table.removeToken(this.id, slot);
-                isLegal = true;
-            } else {
-                if (queueOfKeyPressed.size() < 3)
-                    queueOfKeyPressed.add(slot);
-            }
+         // should lock the option to press a key while the dealer is placing\removing cards 
+        synchronized(dealer.lock){
             
-            // if the queue is full, check if the cards are a set
-            if (queueOfKeyPressed.size() == 3 && isLegal) {
-                int[] cards = new int[3];
-                for (int i = 0; i < 3; i++) {
-                    cards[i] = queueOfKeyPressed.remove();
-                }
-
-                // the dealer checks if the cards are a set
-                if (!dealer.checkSet(id, cards)){
-                    isLegal = false;
+            while (queueOfKeyPresses.size()>=3 && !keyPressedOpen){
+                try{
+                    playerThread.wait();
+                } catch (InterruptedException e) { 
                 }
             }
+    
+            if (queueOfKeyPresses.size()<3){
+                queueOfKeyPresses.add(slot);
+    
+                //////////////////////////// FOR TESTING ////////////////////////////
+                System.out.println("Player.keyPressed: Player " + id + " pressed " + slot);
+            } 
         }
+   
     }
 
     /**
@@ -164,7 +224,15 @@ public class Player implements Runnable {
     public void point() {
         // TODO implement
         score++;
+        try{
+            System.out.println("Player.point: Player " + id + " has a point and is frozen");
+            Thread.sleep(env.config.pointFreezeMillis);
+        } catch (InterruptedException e) {
+        }
 
+        System.out.println("Player.point: Player " + id + " is unfrozen");
+        queueOfKeyPresses.clear();
+        keyPressedOpen = true;
 
         int ignored = table.countCards(); // this part is just for demonstration in the unit tests
         env.ui.setScore(id, ++score);
@@ -174,10 +242,17 @@ public class Player implements Runnable {
      * Penalize a player and perform other related actions.
      */
     public void penalty() {
-        // TODO implement
-        //try(playerThread.sleep(env.config.penaltyFreezeMillis)) {
-        //} catch (InterruptedException e) {
-        //}
+        // TODO implement 
+        try{
+            System.out.println("Player.penalty: Player " + id + " has been penalized and is frozen");
+            Thread.sleep(env.config.penaltyFreezeMillis);
+        } catch (InterruptedException e) {
+        }
+
+        System.out.println("Player.penalty: Player " + id + " is unfrozen");
+        queueOfKeyPresses.clear();
+        keyPressedOpen = true;
+
     }
 
     public int getScore() {
@@ -190,4 +265,33 @@ public class Player implements Runnable {
     public void setDealer(Dealer dealer) {
         this.dealer = dealer;
     }
+
+    public int[] convertToSetOfCard(int playerId){
+        int[] setOfCards = new int[3];
+
+        int[] listOfTokensSlots = table.getTokensSlots(playerId);
+
+        int i = 0;
+        for (int currSlot: listOfTokensSlots) {
+            setOfCards[i] = table.slotToCard[currSlot];
+            i++;
+        }
+        return setOfCards;
+    }
+
+    //geter for the thread of the player
+    public Thread getPlayerThread(){
+        return playerThread;
+    }
+
+    // geter for the player id
+    public String getId(){
+        return "Player " + id;
+    }
+
+    // setter for the answer from the dealer
+    public void setAnsFromCheckSet(int ans){
+        ansFromCheckSet = ans;
+    }
+
 }
