@@ -3,12 +3,8 @@ package bguspl.set.ex;
 import bguspl.set.Env;
 
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
 
 /**
@@ -121,12 +117,14 @@ public class Table {
         } catch (InterruptedException ignored) {}
 
         // TODO implement
-        int card = slotToCard[slot];
-        cardToSlot[card] = null; 
-        slotToCard[slot] = null; 
         for (int i = 0; i< env.config.players; i++){
             removeToken(i, slot);
         }
+
+        int card = slotToCard[slot];
+        cardToSlot[card] = null; 
+        slotToCard[slot] = null; 
+
         env.ui.removeCard(slot);
     }
 

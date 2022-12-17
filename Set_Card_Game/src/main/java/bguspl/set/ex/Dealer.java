@@ -3,11 +3,10 @@ package bguspl.set.ex;
 import bguspl.set.Config;
 import bguspl.set.Env;
 
-import java.lang.reflect.Array;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -58,6 +57,8 @@ public class Dealer implements Runnable {
 
     protected Object lock = new Object(); //lock object for the dealer threads
 
+    protected int maxScore;
+
     public Dealer(Env env, Table table, Player[] players) {
         this.env = env;
         this.table = table;
@@ -77,7 +78,7 @@ public class Dealer implements Runnable {
         // Set the dealer and player threads for each player
         for (int i = 0; i < players.length; i++) {
             players[i].setDealer(this);
-            Thread playerThread = new Thread(players[i], players[i].getId());
+            Thread playerThread = new Thread(players[i], "player " + players[i].getId());
             playerThread.start();
         }
 
@@ -167,10 +168,13 @@ public class Dealer implements Runnable {
                     int slot = emptySlots.remove(i);
                     
                     Collections.shuffle(deck);
-                    int card = deck.remove(0);
-                    table.placeCard(card,slot);
+                    
+                    if (deck.size() != 0){ // if the deck is not empty
+                        int card = deck.remove(0);
+                        table.placeCard(card,slot);
 
-                    System.out.println("card: " + card + " slot: " + slot);
+                        System.out.println("card: " + card + " slot: " + slot);
+                    }
 
                 }   
             }
@@ -183,6 +187,7 @@ public class Dealer implements Runnable {
     private void sleepUntilWokenOrTimeout() {
         // TODO implement
         try {
+            //System.out.println("Thread " + Thread.currentThread().getName() + " is sleeping for tableDelayMillis");
             Thread.sleep(env.config.tableDelayMillis);
                 } catch (InterruptedException exception) {
                     System.out.println("Thread " + Thread.currentThread().getName() + " interrupted.");
@@ -219,6 +224,20 @@ public class Dealer implements Runnable {
      */
     private void announceWinners() {
         // TODO implement
+        Queue<Player> winnersQueue = new LinkedList<Player>();
+
+        for (int i = 0; i < players.length; i++) {
+            if (players[i].getScore() == maxScore){
+                winnersQueue.add(players[i]);
+            }
+        }
+
+        int[] winnerArray = new int[winnersQueue.size()];
+        for (int i = 0; i < winnerArray.length; i++) {
+            winnerArray[i] = winnersQueue.remove().getId();
+        }
+
+        env.ui.announceWinner(winnerArray);
     }
 
     ///////////////////////////////// new methodes /////////////////////////////////
@@ -247,14 +266,12 @@ public class Dealer implements Runnable {
                 players[playerId].getPlayerThread().interrupt();
             }
 
-            long pointFreezeTimer = System.currentTimeMillis()+env.config.pointFreezeMillis+1000;
-            while (System.currentTimeMillis() <= pointFreezeTimer){
-                env.ui.setFreeze(playerId, pointFreezeTimer-System.currentTimeMillis()); // add block to the player in keyPress
-            }
+            updateTimerDisplayForPlayer(playerId, isSet);
             
             // when a set is found the reshuffleTime is updated
-            reshuffleTime = System.currentTimeMillis() + env.config.turnTimeoutMillis; 
-            updateTimerDisplay(isSet);
+            reshuffleTime = System.currentTimeMillis() + env.config.turnTimeoutMillis;
+
+            //updateTimerDisplay(isSet);
 
         } else {
             players[playerId].setAnsFromCheckSet(-1);
@@ -264,10 +281,7 @@ public class Dealer implements Runnable {
                 players[playerId].getPlayerThread().interrupt();
             }
             
-            long penaltyFreezeTimer = System.currentTimeMillis()+env.config.penaltyFreezeMillis+1000;
-            while (System.currentTimeMillis() <= penaltyFreezeTimer ){
-                env.ui.setFreeze(playerId, penaltyFreezeTimer-System.currentTimeMillis()-1000); // add block to the player in keyPress
-            }
+            updateTimerDisplayForPlayer(playerId, isSet);
 
         }
         //notify();
@@ -280,7 +294,7 @@ public class Dealer implements Runnable {
             System.out.println("Dealer: queueOfSets");
             int playerID = queueOfPlayersId.remove();
             int[] set = queueOfSets.remove();
-            System.out.println("set: " + set[0] + " " + set[1] + " " + set[2]);
+            System.out.println("set: " + table.cardToSlot[set[0]] + " " + table.cardToSlot[set[1]] + " " + table.cardToSlot[set[2]]);
             checkSet(playerID, set);
             }
     }
@@ -288,6 +302,28 @@ public class Dealer implements Runnable {
     // getter for the dealer thread
     public Thread getThread(){
         return dealerThread;
+    }
+
+    
+    private void updateTimerDisplayForPlayer(int playerId, boolean isSet) {
+
+        if (isSet){ // if the player had a legal set
+            long pointFreezeTimer = System.currentTimeMillis()+env.config.pointFreezeMillis;
+            while (System.currentTimeMillis() <= pointFreezeTimer){
+                env.ui.setFreeze(playerId, pointFreezeTimer-System.currentTimeMillis()+1000); // show the player in red for env.config.pointFreezeMillis
+                updateTimerDisplay(true);
+            }
+            env.ui.setFreeze(playerId, pointFreezeTimer-System.currentTimeMillis()); // show the player in black
+
+        } else { // if the player had an illegal set
+            long penaltyFreezeTimer = System.currentTimeMillis()+env.config.penaltyFreezeMillis;
+            while (System.currentTimeMillis() <= penaltyFreezeTimer){
+                env.ui.setFreeze(playerId, penaltyFreezeTimer-System.currentTimeMillis()+1000);  // show the player in red for env.config.penaltyFreezeMillis
+                updateTimerDisplay(true);
+            }
+            env.ui.setFreeze(playerId, penaltyFreezeTimer-System.currentTimeMillis()); // show the player in black
+
+        }
     }
 
 }
