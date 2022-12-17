@@ -1,7 +1,5 @@
 package bguspl.set.ex;
 
-import java.security.spec.EncodedKeySpec;
-import java.util.ArrayDeque;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.logging.Level;
@@ -91,6 +89,9 @@ public class Player implements Runnable {
     public void run() {
         playerThread = Thread.currentThread();
         env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + "starting.");
+
+        System.out.println("Player.run(): " + Thread.currentThread().getName() + " is " + (human ? "human" : "computer") );
+
         if (!human) createArtificialIntelligence();
 
         ////////////////////// for testing ///////////////////////
@@ -101,27 +102,28 @@ public class Player implements Runnable {
             while (!queueOfKeyPresses.isEmpty()){
 
                 int currSlot = queueOfKeyPresses.remove();
+
+                // notify the ai thread that the key press has been processed
+                if (!human) aiThread.interrupt();
                 
                 System.out.println("Player.run(): is the queue of tokens contain " + currSlot + "? " + table.containsToken(id, currSlot));
 
-                if (table.containsToken(id, currSlot)){ //fix bug
+                if (table.containsToken(id, currSlot)){ 
                     table.removeToken(id, currSlot);
                     
                 } else {
 
-                    int amountOfTokens = table.countTokens(id);
-
-                    if (amountOfTokens<3){
+                    if (table.countTokens(id)<3){
                         table.placeToken(id, currSlot);
                     }
                     
-                    if (amountOfTokens==3){
+                    if (table.countTokens(id)==3){
 
-                        // block the player from pressing on a key
+                        // block the player from pressing on a key and *wait* for the dealer to check if the set is legal
                         keyPressedOpen = false;
 
                         //send the set to the dealer for checking
-                        int[] currSetOfCards = convertToSetOfCard(id); //HEREEEEEEE
+                        int[] currSetOfCards = convertToSetOfCard(id); 
 
                         dealer.queueOfPlayersId.add(id);
                         dealer.queueOfSets.add(currSetOfCards);
@@ -147,8 +149,6 @@ public class Player implements Runnable {
                             ansFromCheckSet = 0;
                         } 
 
-                        
-
                     }
 
                 }
@@ -170,9 +170,24 @@ public class Player implements Runnable {
             env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " starting.");
             while (!terminate) {
                 // TODO implement player key press simulator
-                try {
-                    wait();
-                } catch (InterruptedException ignored) {}
+                int slot = (int) (Math.random() * 12);
+                //keyPressed(slot);
+                synchronized(this){
+                    while (queueOfKeyPresses.size() == 3){
+                        try{
+                            wait();
+                        } catch (InterruptedException e) {
+                        }
+                    }
+                    
+                    keyPressed(slot);
+                    notify(); // ???
+
+                }
+
+                // try {
+                //     wait();
+                // } catch (InterruptedException ignored) {}
             }
             env.logger.log(Level.INFO, "Thread " + Thread.currentThread().getName() + " terminated.");
         }, "computer-" + id);
@@ -195,21 +210,18 @@ public class Player implements Runnable {
     public void keyPressed(int slot) {
         // TODO implement
 
+        System.out.println("Player.keyPressed: Thread " + Thread.currentThread().getName() + " is " + (human ? "human" : "computer" + "\n\tslot is: " + slot) );
+
          // should lock the option to press a key while the dealer is placing\removing cards 
         synchronized(dealer.lock){
-            
-            while (queueOfKeyPresses.size()>=3 && !keyPressedOpen){
-                try{
-                    playerThread.wait();
-                } catch (InterruptedException e) { 
-                }
-            }
+
+            System.out.println( "\n\tamountOfTokens: " + table.countTokens(id));
     
-            if (queueOfKeyPresses.size()<3){
+            if (table.countTokens(id)<=3 && keyPressedOpen){
                 queueOfKeyPresses.add(slot);
     
                 //////////////////////////// FOR TESTING ////////////////////////////
-                System.out.println("Player.keyPressed: Player " + id + " pressed " + slot);
+                System.out.println("Player.keyPressed: Player " + id + " pressed " + slot + "\n\tamountOfTokens: " + table.countTokens(id));
             } 
         }
    
@@ -224,13 +236,19 @@ public class Player implements Runnable {
     public void point() {
         // TODO implement
         score++;
+
+        // update the maxScore in the dealer
+        if (score > dealer.maxScore){
+            dealer.maxScore = score;
+        } 
+
         try{
-            System.out.println("Player.point: Player " + id + " has a point and is frozen");
+            System.out.println("Player.penalty: Thread " + Thread.currentThread().getName() + " has been penalized and is frozen");
             Thread.sleep(env.config.pointFreezeMillis);
         } catch (InterruptedException e) {
         }
 
-        System.out.println("Player.point: Player " + id + " is unfrozen");
+        System.out.println("Player.penalty: Thread " + Thread.currentThread().getName() + " has been penalized and is frozen");
         queueOfKeyPresses.clear();
         keyPressedOpen = true;
 
@@ -244,12 +262,12 @@ public class Player implements Runnable {
     public void penalty() {
         // TODO implement 
         try{
-            System.out.println("Player.penalty: Player " + id + " has been penalized and is frozen");
+            System.out.println("Player.penalty: Thread " + Thread.currentThread().getName() + " has been penalized and is frozen");
             Thread.sleep(env.config.penaltyFreezeMillis);
         } catch (InterruptedException e) {
         }
 
-        System.out.println("Player.penalty: Player " + id + " is unfrozen");
+        System.out.println("Player.penalty: Thread " + Thread.currentThread().getName() + " has been penalized and is frozen");
         queueOfKeyPresses.clear();
         keyPressedOpen = true;
 
@@ -262,6 +280,7 @@ public class Player implements Runnable {
 
     //////////////////////// METHODS ADDED ////////////////////////
 
+    // setter for the answer from the dealer
     public void setDealer(Dealer dealer) {
         this.dealer = dealer;
     }
@@ -279,14 +298,14 @@ public class Player implements Runnable {
         return setOfCards;
     }
 
-    //geter for the thread of the player
+    //getter for the thread of the player
     public Thread getPlayerThread(){
         return playerThread;
     }
 
-    // geter for the player id
-    public String getId(){
-        return "Player " + id;
+    // getter for the player id
+    public int getId(){
+        return id;
     }
 
     // setter for the answer from the dealer
